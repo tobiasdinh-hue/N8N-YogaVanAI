@@ -1,0 +1,271 @@
+{
+  "name": "YogaVan AI - Routen- und Kapazitätsplaner",
+  "nodes": [
+    {
+      "parameters": {
+        "binaryPropertyName": "CSV_Datei",
+        "options": {
+          "delimiter": ",",
+          "headerRow": true
+        }
+      },
+      "id": "35ef21f8-a2dd-47e9-8e3c-02ba62cdb89c",
+      "name": "CSV zu JSON parsen",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        288,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "={{ $json.latitude }}"
+            },
+            {
+              "name": "longitude",
+              "value": "={{ $json.longitude }}"
+            },
+            {
+              "name": "daily",
+              "value": "temperature_2m_max,precipitation_sum,sunshine_duration"
+            },
+            {
+              "name": "timezone",
+              "value": "Europe/Berlin"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "078ba937-b469-48cb-add5-c692f3df387b",
+      "name": "Wetterprognose abrufen (Open-Meteo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const standorte = $('CSV zu JSON parsen').all();\nconst wetterDaten = $input.all();\n\nconst kombiniert = standorte.map((item, index) => {\n  const s = item.json;\n  const w = wetterDaten[index]?.json?.daily || {};\n\n  const temps = w.temperature_2m_max || [];\n  const regen = w.precipitation_sum || [];\n  const sonneSek = w.sunshine_duration || [];\n\n  const avgTemp = temps.length\n    ? (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1)\n    : 'k.A.';\n  const gesamtRegen = regen.length\n    ? regen.reduce((a, b) => a + b, 0).toFixed(1)\n    : 'k.A.';\n  const avgSonneStd = sonneSek.length\n    ? (sonneSek.reduce((a, b) => a + b, 0) / sonneSek.length / 3600).toFixed(1)\n    : 'k.A.';\n\n  return {\n    region: s.region,\n    ort: s.ort,\n    stellplatz_name: s.stellplatz_name,\n    gespann_geeignet: s.gespann_geeignet,\n    preis_pro_nacht_eur: s.preis_pro_nacht_eur,\n    nachfrage_score_1_bis_10: s.nachfrage_score,\n    besonderheiten: s.besonderheiten,\n    wetter_7_tage: {\n      durchschnitt_max_temp_c: avgTemp,\n      gesamt_niederschlag_mm: gesamtRegen,\n      durchschnitt_sonnenstunden_pro_tag: avgSonneStd,\n      tagesdaten: {\n        datum: w.time || [],\n        temp_max: temps,\n        regen_mm: regen\n      }\n    }\n  };\n});\n\nreturn [\n  {\n    json: {\n      anzahl_standorte: kombiniert.length,\n      standort_analyse_daten: JSON.stringify(kombiniert, null, 2)\n    }\n  }\n];"
+      },
+      "id": "3976ae0a-f275-43dd-9750-7d1b35eb31a4",
+      "name": "Standorte & Wetter zusammenführen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const antwort = $input.first().json.candidates?.[0]?.content?.parts?.[0]?.text || 'Keine Antwort von der KI erhalten.';\nconst datum = new Date().toLocaleDateString('de-DE');\n\nconst markdownReport = `# 🚐 YogaVan AI – Wöchentlicher Tourenplan (${datum})\\n\\n${antwort}\\n`;\n\nreturn [\n  {\n    json: {\n      report: markdownReport\n    }\n  }\n];"
+      },
+      "id": "d3a0e79e-9982-44d3-8e89-2a05029b4431",
+      "name": "Tourenplan aufbereiten",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "report",
+        "options": {
+          "fileName": "tourenplan_ergebnis.md"
+        }
+      },
+      "id": "3ff243e3-4faf-4331-9684-81027539980e",
+      "name": "In Markdown-Datei umwandeln",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        1616,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "Yoga Van",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "CSV Datei",
+              "fieldType": "file"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        0,
+        0
+      ],
+      "id": "335f9c6f-faf2-4fe1-a3c5-732ae202fe7c",
+      "name": "On form submission",
+      "webhookId": "586d7ba5-662f-4c40-b89a-389039b6cce2"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "returnBinary",
+        "completionTitle": "Dein YogaVan AI Tourenplan ist fertig!",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        1840,
+        0
+      ],
+      "id": "4ae8e199-b9f9-4ec6-aba8-0b3320cd84ba",
+      "name": "Form",
+      "webhookId": "288fd90e-1c60-4631-a3fc-366f7dd1b21f"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  JSON.stringify({\n    contents: [\n      {\n        parts: [\n          {\n            text: \"Du bist ein KI-Routenplaner für ein mobiles Yoga-Studio mit Wohnwagen-Gespann. Analysiere die folgenden Standort- und Wetterdaten. Filtere alle Standorte aus, die nicht gespann-geeignet sind, und erstelle einen strukturierten Tourenplan im Markdown-Format mit Begründung pro Stopp.\\n\\nDaten:\\n\" + $json.standort_analyse_daten\n          }\n        ]\n      }\n    ]\n  })\n}}",
+        "options": {}
+      },
+      "id": "7da87c36-e0ea-4ce8-a41e-9896a154f9fc",
+      "name": "KI-Routenplaner (Google Gemini)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1168,
+        0
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mIN9zVZkc2rilyRM",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CSV zu JSON parsen": {
+      "main": [
+        [
+          {
+            "node": "Wetterprognose abrufen (Open-Meteo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wetterprognose abrufen (Open-Meteo)": {
+      "main": [
+        [
+          {
+            "node": "Standorte & Wetter zusammenführen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standorte & Wetter zusammenführen": {
+      "main": [
+        [
+          {
+            "node": "KI-Routenplaner (Google Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tourenplan aufbereiten": {
+      "main": [
+        [
+          {
+            "node": "In Markdown-Datei umwandeln",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "In Markdown-Datei umwandeln": {
+      "main": [
+        [
+          {
+            "node": "Form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "CSV zu JSON parsen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KI-Routenplaner (Google Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Tourenplan aufbereiten",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3bd867e3-3f1d-4051-883e-757e1abd3f25",
+  "meta": {
+    "instanceId": "16d07faddec26260e8bf0880054c254afee9eb2c17c6655892881b7531b3ce2f"
+  },
+  "nodeGroups": [],
+  "id": "wtMP7rLIoWmDJCUt",
+  "tags": [
+    {
+      "updatedAt": "2026-11-25T20:50:23.264Z",
+      "createdAt": "2026-11-25T20:50:23.264Z",
+      "id": "H7KASG1pv4Rz6VK0",
+      "name": "IHK-Abschlussprojekt"
+    },
+    {
+      "updatedAt": "2026-11-25T20:50:23.252Z",
+      "createdAt": "2026-11-25T20:50:23.252Z",
+      "id": "LF735VGtaIyGxIdZ",
+      "name": "YogaVan-AI"
+    }
+  ]
+}
